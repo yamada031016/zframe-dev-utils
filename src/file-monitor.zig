@@ -2,19 +2,17 @@ const std = @import("std");
 
 pub const FileMonitor = struct {
     var meta: std.fs.File.Stat = undefined;
-    dir: std.fs.Dir,
-    fileName: []const u8,
+    dirName: []const u8,
     size: u64,
     last_modified: i128,
 
-    pub fn init(fileName: []const u8, dir:std.fs.Dir) !FileMonitor {
-        std.debug.print("monitor init fileName:{s}\n", .{fileName});
-        const file = try dir.openFile(fileName, .{});
-        defer file.close();
-        const stat = try file.stat();
+    pub fn init(dirName: []const u8) !FileMonitor {
+        std.debug.print("file-monitor watching {s}...\n", .{dirName});
+        var dir = try std.fs.cwd().openDir(dirName, .{});
+        defer dir.close();
+        const stat = try dir.stat();
         var self = FileMonitor {
-            .dir = dir,
-            .fileName = fileName,
+            .dirName = dirName,
             .size = stat.size,
             .last_modified = stat.mtime,
         };
@@ -23,12 +21,14 @@ pub const FileMonitor = struct {
     }
 
     pub fn detectChanges(self: *FileMonitor) bool {
-        if (self.dir.openFile(self.fileName, .{})) |file| {
-            meta = file.stat() catch return false;
-            if (self.size != meta.size and self.last_modified != meta.mtime) {
+        if (std.fs.cwd().openDir(self.dirName, .{})) |*dir| {
+            defer @constCast(dir).close();
+            const stat = dir.stat() catch return false;
+            // if (self.size != stat.size and self.last_modified != stat.mtime) {
+            if (self.size != stat.size) {
                 std.debug.print("detect!\n", .{});
-                self.size = meta.size;
-                self.last_modified = meta.mtime;
+                self.size = stat.size;
+                self.last_modified = stat.mtime;
                 return true;
             } else {
                 return false;
