@@ -1,46 +1,104 @@
 const std = @import("std");
+const IN = std.os.linux.IN;
 
 pub const FileMonitor = struct {
-    var meta: std.fs.File.Stat = undefined;
-    dirName: []const u8,
-    size: u64,
-    last_modified: i128,
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const alloc = gpa.allocator();
 
-    pub fn init(dirName: []const u8) !FileMonitor {
-        std.debug.print("file-monitor watching {s}...\n", .{dirName});
-        var dir = try std.fs.cwd().openDir(dirName, .{});
-        defer dir.close();
-        const stat = try dir.stat();
+    root_path: []const u8,
+    fd: i32,
+    // monitors: std.ArrayList(i32),
+    monitors: std.StringHashMap(i32),
+
+    pub fn init(dir_path: []const u8) !FileMonitor {
+        std.debug.print("file-monitor watching {s}...\n", .{dir_path});
+        const fd = try std.posix.inotify_init1(0);
+
         var self = FileMonitor {
-            .dirName = dirName,
-            .size = stat.size,
-            .last_modified = stat.mtime,
+            .root_path = dir_path,
+            .fd = fd,
+            .monitors = std.StringHashMap(i32).init(alloc),
         };
-        _=&self;
+        try self.addMonitor(dir_path);
         return self;
     }
 
-    pub fn detectChanges(self: *FileMonitor) bool {
-        if (std.fs.cwd().openDir(self.dirName, .{})) |*dir| {
-            defer @constCast(dir).close();
-            const stat = dir.stat() catch return false;
-            // if (self.size != stat.size and self.last_modified != stat.mtime) {
-            if (self.size != stat.size) {
-                std.debug.print("detect!\n", .{});
-                self.size = stat.size;
-                self.last_modified = stat.mtime;
-                return true;
-            } else {
-                return false;
-            }
-        } else |err| {
-            switch (err) {
-                // ファイルが空だと起こる
-                error.FileNotFound => return false,
-                else => {
-                    std.debug.print("{s}\n", .{@errorName(err)});
-                    return false;
+    pub fn deinit(self: *FileMonitor) void {
+        // _ = std.os.linux.inotify_rm_watch(self.fd, self.watcher);
+        _ = std.os.linux.close(self.fd);
+        _ = gpa.deinit();
+    }
+
+    fn addMonitor(self: *FileMonitor, path:[]const u8) !void {
+        const wd = try std.posix.inotify_add_watch(self.fd, path, IN.CREATE | IN.DELETE | IN.MODIFY | IN.MOVE_SELF | IN.MOVE);
+        try self.monitors.put(path, wd);
+
+        var root = try std.fs.cwd().openDir(path, .{.iterate=true});
+        defer root.close();
+        var walker = try root.walk(alloc);
+        while (try walker.next()) |entry| {
+            switch(entry.kind) {
+                .directory => {
+                    std.debug.print("dir:{s}\n", .{try std.fmt.allocPrintZ(alloc, "{s}/{s}", .{path, entry.path})});
+                    try self.addMonitor(try std.fmt.allocPrintZ(alloc, "{s}/{s}", .{path, entry.path}));
                 },
+                else => {},
+            }
+        }
+    }
+
+    fn removeMonitor(self: *FileMonitor, path:[]const u8) !void {
+        const kv = self.monitors.fetchRemove(path).?;
+        std.debug.print("{any}", .{kv});
+        //
+        // var root = try std.fs.cwd().openDir(path, .{.iterate=true});
+        // defer root.close();
+        // var walker = try root.walk(alloc);
+        // while (try walker.next()) |entry| {
+        //     switch(entry.kind) {
+        //         .directory => {
+        //             // std.debug.print("dir:{s}\n", .{try std.fmt.allocPrintZ(alloc, "{s}/{s}", .{path, entry.path})});
+        //             try self.addMonitor(try std.fmt.allocPrintZ(alloc, "{s}/{s}", .{path, entry.path}));
+        //         },
+        //         else => {},
+        //     }
+        // }
+    }
+
+    pub fn detectChanges(self: *FileMonitor) bool {
+        var buf:[256]u8 = undefined;
+        while(true) {
+            if (std.posix.read(self.fd, &buf)) |_| {
+                var event = @as(*std.os.linux.inotify_event, @ptrCast(@alignCast(buf[0..])));
+                switch (event.mask) {
+                    IN.CREATE | IN.ISDIR => {
+                        const path = std.fmt.allocPrintZ(alloc, "{s}/{s}", .{self.root_path, event.getName().?}) catch {
+                            return false;
+                        };
+                        std.debug.print("created: {s},\tpath: {s}\n", .{event.getName().?, path});
+                        self.addMonitor(self.root_path) catch {
+                            return false;
+                        };
+                    },
+                    IN.DELETE | IN.ISDIR => {
+                        std.debug.print("deleted: {s}\n", .{event.getName().?});
+                        // const path = std.fmt.allocPrintZ(alloc, "{s}/{s}", .{self.root_path, event.getName().?}) catch {
+                        //     return false;
+                        // };
+                        // self.removeMonitor(path) catch {
+                        //     return false;
+                        // };
+                    },
+                    IN.MODIFY => {
+                        std.debug.print("event: {s}\n", .{event.getName().?});
+                    },
+                    IN.MOVE_SELF => {},
+                    IN.MOVE => {},
+                    else => {},
+                }
+                return true;
+            } else |e| {
+                std.debug.print("error: {s}\n", .{@errorName(e)});
             }
         }
     }

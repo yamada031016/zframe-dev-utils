@@ -12,8 +12,8 @@ pub fn main() !void {
 
     var browser = Browser.init(.chrome);
     try browser.openHtml();
-    // try browser.reload();
     var Monitor = try FileMonitor.init(observe_dir);
+    defer Monitor.deinit();
     while(true) {
         if (Monitor.detectChanges()) {
             try autobuild();
