@@ -3,18 +3,22 @@ const std = @import("std");
 pub const Browser = struct {
     var arena_allocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     var browser_id:[]const u8 = undefined;
+    const domain =  "http://localhost";
 
     allocator:std.mem.Allocator,
     browser: []const u8 = "xdg-open",
-    url:[]const u8 = "http://localhost:8000",
+    url:[]const u8,
     app:WebBrowser,
 
-    pub fn init(app:WebBrowser) Browser {
+    pub fn init(app:WebBrowser, port:u16) !Browser {
+        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        const allocator = gpa.allocator();
+        const url = try std.fmt.allocPrintZ(allocator, "{s}:{}", .{domain, port} );
         return Browser{
             .allocator = arena_allocator.allocator(),
             .browser = "xdg-open",
             .app = app,
-            .url = "http://localhost:8000",
+            .url = url
         };
     }
 
