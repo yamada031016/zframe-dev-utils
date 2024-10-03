@@ -1,11 +1,13 @@
 const std = @import("std");
+const log = std.log;
 const Browser = @import("browser.zig").Browser;
 const FileMonitor = @import("file-monitor.zig").FileMonitor;
 const HTTPServer = @import("zerver").HTTPServer;
+const md2html = @import("md2html");
 
-fn helpMessage() []const u8 {
+fn usage_cmd() []const u8 {
     return (
-        \\Usage: zin [command] [option]
+        \\Usage: zframe [command] [option]
         \\
         \\Commands:
         \\
@@ -20,22 +22,18 @@ fn helpMessage() []const u8 {
     );
 }
 
-fn initProject() !void {
-    try execute_command(.{"zig", "init"});
-}
-
 fn serve() !noreturn {
     const observe_dir = "src";
 
     const ip_addr = "0.0.0.0";
-    var server = try HTTPServer.init("zig-out/html", ip_addr,  3000);
+    var server = try HTTPServer.init("zig-out/html", ip_addr, 3000);
     defer server.deinit();
 
-    var act = std.posix.Sigaction {
+    var act = std.posix.Sigaction{
         .handler = .{
             .handler = struct {
                 fn wrapper(_: c_int) callconv(.C) void {
-                    @panic("accept SIGINT.\nbye ...\n");
+                    std.process.exit(0);
                 }
             }.wrapper,
         },
@@ -55,56 +53,190 @@ fn serve() !noreturn {
         try server.serve();
     } else {
         // parent process
-        while(true) {
+        while (true) {
             if (Monitor.detectChanges()) {
-                try execute_command(.{"zig", "build", "run"});
+                const status = try execute_command(.{ "zig", "build", "run" });
+                if (status == 0) {
+                    try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
+                }
                 try browser.reload();
             }
-            std.time.sleep(1000000000);
+            std.time.sleep(5000000000);
         }
     }
 }
 
+fn mdToHTML() !void {
+    var md_dir = try std.fs.cwd().openDir("src/pages", .{ .iterate = true });
+    defer md_dir.close();
+    var md_output_dir = try std.fs.cwd().openDir("zig-out/html", .{ .iterate = true });
+    defer md_output_dir.close();
+    var walker = try md_dir.walk(std.heap.page_allocator);
+    while (try walker.next()) |file| {
+        switch (file.kind) {
+            .file => {
+                if (std.mem.eql(u8, ".md", std.fs.path.extension(file.path))) {
+                    var buf: [1024 * 10]u8 = undefined;
+                    const md = try file.dir.openFile(file.path, .{});
+                    const md_len = try md.readAll(&buf);
+                    const html = try md2html.convert(buf[0..md_len]);
+                    const output = try md_output_dir.createFile(try std.fmt.allocPrint(std.heap.page_allocator, "{s}.html", .{std.fs.path.stem(file.path)}), .{});
+                    try output.writeAll(html);
+                    defer output.close();
+                }
+            },
+            else => {},
+        }
+    }
+}
+
+fn initProject(name: []const u8) !void {
+    const cwd = std.fs.cwd();
+    if (cwd.makeDir(name)) {
+        const project_dir = try cwd.openDir(name, .{});
+        {
+            const dir_path = [_][]const u8{ "src", "src/pages", "src/components", "src/api", "static", ".plugins" };
+            for (dir_path) |path| {
+                try project_dir.makeDir(path);
+            }
+        }
+        const create_paths = [_][]const u8{ "src/main.zig", "src/pages/index.zig", "src/components/components.zig", "src/components/layout.zig", "src/components/head.zig", "build.zig" };
+
+        const self_exe_path = try std.fs.selfExePathAlloc(std.heap.page_allocator);
+        var cur_path: []const u8 = self_exe_path;
+        // std.debug.print("sub_exe_path: {s}\n", .{std.fs.path.dirname(self_exe_path).?});
+        const template_dir = while (std.fs.path.dirname(cur_path)) |dirname| : (cur_path = dirname) {
+            var base_dir = cwd.openDir(dirname, .{}) catch continue;
+            defer base_dir.close();
+
+            const src_dir = existsSrc: {
+                const src_zig = "src";
+                const _src_dir = base_dir.openDir(src_zig, .{}) catch continue;
+                break :existsSrc std.Build.Cache.Directory{ .path = src_zig, .handle = _src_dir };
+            };
+            break try src_dir.handle.openDir("init", .{});
+        } else {
+            unreachable;
+        };
+
+        const max_bytes = 10 * 1024 * 1024;
+        for (create_paths) |path| {
+            // try project_dir.makePath(path);
+            const contents = try template_dir.readFileAlloc(std.heap.page_allocator, path, max_bytes);
+            try project_dir.writeFile(.{ .sub_path = path, .data = contents, .flags = .{ .exclusive = true } });
+        }
+
+        const cmd = try std.fmt.allocPrint(std.heap.page_allocator, "cd {s} ; zig fetch --save=ssg-zig https://github.com/yamada031016/ssg-zig/archive/refs/heads/main.tar.gz", .{name});
+        _ = try execute_command(.{ "sh", "-c", cmd });
+    } else |_| {
+        log.err("{s} is already exists.", .{name});
+    }
+}
+
+const stdout = std.io.getStdOut().writer();
+
+fn handleTty() !void {
+    var tty = try std.fs.cwd().openFile("/dev/tty", .{ .mode = .read_write });
+    defer tty.close();
+
+    const original = try posix.tcgetattr(tty.handle);
+    const raw = config: {
+        var raw = original;
+        raw.lflag.ECHO = false;
+        raw.lflag.ICANON = false;
+        raw.lflag.ISIG = false;
+        raw.lflag.IEXTEN = false;
+        raw.iflag.IXON = false;
+        raw.iflag.ICRNL = false;
+        raw.iflag.BRKINT = false;
+        raw.iflag.INPCK = false;
+        raw.iflag.ISTRIP = false;
+        raw.cc[@intFromEnum(os.linux.V.TIME)] = 0;
+        raw.cc[@intFromEnum(os.linux.V.MIN)] = 1;
+        break :config raw;
+    };
+    try posix.tcsetattr(tty.handle, .FLUSH, raw);
+    try enterAlt();
+    try stdout.writeAll("\x1B[2J"); // clear screen
+    try stdout.writeAll("\x1B[0;0H"); // clear screen
+
+    const reader = tty.reader();
+    while (reader.readByte()) |byte| {
+        if (byte == 'c' & '\x1F' or byte == 'q') {
+            try posix.tcsetattr(tty.handle, .FLUSH, original);
+            try stdout.writeAll("\x1B[2J"); // clear screen
+            try leaveAlt();
+            std.process.exit(0);
+        } else {
+            // try stdout.writeByte(byte);
+        }
+    } else |e| {
+        log.err("{s}", .{@errorName(e)});
+    }
+}
+fn enterAlt() !void {
+    try stdout.writeAll("\x1B[s"); // Save cursor position.
+    try stdout.writeAll("\x1B[?47h"); // Save screen.
+    try stdout.writeAll("\x1B[?1049h"); // Enable alternative buffer.
+}
+
+fn leaveAlt() !void {
+    try stdout.writeAll("\x1B[?1049l"); // Disable alternative buffer.
+    try stdout.writeAll("\x1B[?47l"); // Restore screen.
+    try stdout.writeAll("\x1B[u"); // Restore cursor position.
+}
+
+const os = std.os;
+const posix = std.posix;
 pub fn main() !void {
     var args = std.process.args();
-    _ = args.next() orelse "zframe";
-    if(args.next()) |arg| {
+    _ = args.skip();
+    const thread = try std.Thread.spawn(.{}, handleTty, .{});
+    _ = thread;
+
+    if (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "help")) {
-            std.debug.print(helpMessage(), .{});
-        }
-        else if (std.mem.eql(u8, arg, "init")) {
-            if(args.next()) |project_name| {
-                }
+            std.debug.print(usage_cmd(), .{});
+        } else if (std.mem.eql(u8, arg, "init")) {
+            if (args.next()) |project_name| {
+                try initProject(project_name);
+            } else {
+                std.log.err("zframe init <project_name>", .{});
             }
-        }
-        else if (std.mem.eql(u8, arg, "build")) {
-            try execute_command(.{"zig", "build", "run"});
-            if(args.next()) |option| {
+        } else if (std.mem.eql(u8, arg, "build")) {
+            const status = try execute_command(.{ "zig", "build", "run" });
+            if (status == 0) {
+                try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
+            }
+            try mdToHTML();
+            if (args.next()) |option| {
                 if (std.mem.eql(u8, option, "serve")) {
                     try serve();
-                } else if (std.mem.eql(u8, option, "-h")) {
-
-                }
+                } else if (std.mem.eql(u8, option, "-h")) {}
             }
         } else {
-            std.debug.print("Invalid command: {s}\n", .{arg});
-            std.debug.print(helpMessage(), .{});
+            std.log.err("Invalid command: {s}", .{arg});
+            std.debug.print(usage_cmd(), .{});
         }
+    } else {
+        log.err("expected command argument", .{});
+        std.debug.print(usage_cmd(), .{});
     }
 }
 
-fn execute_command(command: anytype) !void {
-    var arena_allocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+fn execute_command(command: anytype) !u32 {
     const fork_pid = try std.posix.fork();
     if (fork_pid == 0) {
         // child process
-        const err = std.process.execve(arena_allocator.allocator(), &command, null); // noreturn if success
-        std.debug.print("{s}\n", .{@errorName(err)});
+        const err = std.process.execve(std.heap.page_allocator, &command, null); // noreturn if success
+        std.log.err("{s}", .{@errorName(err)});
     } else {
         // parent process
         const wait_result = std.posix.waitpid(fork_pid, 0);
-        if (wait_result.status != 0) {
-            std.debug.print("exit code: {}\n", .{wait_result.status});
-        }
+        return wait_result.status;
+        // if (wait_result.status != 0) {
+        //     std.log.err("exit code: {}", .{wait_result.status});
+        // }
     }
+    unreachable;
 }

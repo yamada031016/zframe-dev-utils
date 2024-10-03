@@ -6,18 +6,24 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "zframe",
-        .root_source_file =  b.path("src/main.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const zerver_optimize = b.standardOptimizeOption(.{.preferred_optimize_mode = .ReleaseFast});
+    const zerver_optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
     const zerver = b.dependency("zerver", .{
         .target = target,
         .optimize = zerver_optimize,
     });
 
     exe.root_module.addImport("zerver", zerver.module("zerver"));
+
+    const _md2html = b.dependency("md2html", .{
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    exe.root_module.addImport("md2html", _md2html.module("md2html"));
 
     b.installArtifact(exe);
 
@@ -32,7 +38,7 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
     const exe_unit_tests = b.addTest(.{
-        .root_source_file =  b.path("src/main.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
