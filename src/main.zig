@@ -13,6 +13,7 @@ fn usage_cmd() []const u8 {
         \\
         \\  init        Initialize zin project at the current directory
         \\  build       Build zin project
+        \\  update      Update all dependencies
         \\
         \\  help        Show this help messages.
         \\
