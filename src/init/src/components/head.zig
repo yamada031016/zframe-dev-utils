@@ -1,4 +1,4 @@
-const z = @import("ssg-zig");
+const z = @import("zframe");
 const node = z.node;
 
 pub fn Head(page_name: []const u8, contents: anytype) node.Node {

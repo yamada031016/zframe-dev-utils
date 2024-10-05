@@ -4,21 +4,20 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const exe = b.addExecutable(.{
-        .name = "ssg-zig-demo",
+        .name = "zframe-demo",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const ssg_zig_optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
-    const ssg_zig = b.dependency("ssg-zig", .{
+    const ssg_zig = b.dependency("zframe", .{
         .target = target,
-        .optimize = ssg_zig_optimize,
+        .optimize = .ReleaseFast,
     });
-    exe.root_module.addImport("ssg-zig", ssg_zig.module("ssg-zig"));
+    exe.root_module.addImport("zframe", ssg_zig.module("zframe"));
 
     const components = b.createModule(.{ .root_source_file = b.path("src/components/components.zig") });
-    components.addImport("ssg-zig", ssg_zig.module("ssg-zig"));
+    components.addImport("zframe", ssg_zig.module("zframe"));
     components.addImport("components", components);
     exe.root_module.addImport("components", components);
 

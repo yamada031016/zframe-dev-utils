@@ -1,4 +1,4 @@
-const z = @import("ssg-zig");
+const z = @import("zframe");
 const c = @import("components");
 const Head = c.head.Head;
 const node = z.node;
@@ -12,22 +12,22 @@ fn index() node.Node {
     // const img = node.createNode(.img);
 
     return div.setClass("text-[#25332a] ").init(.{
-        Head("SSG-ZIG - Zig Web Frontend Framework", .{}),
+        Head("zframe - Zig Web Frontend Framework", .{}),
         // img.init(.{.src="hoge", .alt="Test image", .width=100, .height=200}),
         div.setClass("text-center mt-32").init(.{
-            h1.init(.{"SSG-ZIG -- Web Frontend Framework"}).setClass("text-5xl text-[#F0544F] font-black"),
+            h1.init(.{"zframe -- Web Frontend Framework"}).setClass("text-5xl text-[#F0544F] font-black"),
             p.init(.{
                 \\ Utilize Wasm easily, without any configure and technics.<br>
-                \\ SSG-ZIG enable you to integrate Wasm and your Website.
+                \\ zframe enable you to integrate Wasm and your Website.
             }).setClass("text-xl pt-6"),
         }),
         div.setClass("flex justify-center gap-8 pt-24").init(.{
             a.setClass("py-3 px-6 text-lg font-bold text-white bg-[#F0544F] border").init(.{ "Documentation", .{}, "Get Started" }),
-            a.setClass("py-3 px-6 text-lg font-bold border border-gray-200").init(.{ "Documentation", .{}, "Learn SSG-ZIG" }),
+            a.setClass("py-3 px-6 text-lg font-bold border border-gray-200").init(.{ "Documentation", .{}, "Learn zframe" }),
         }),
-        a.setClass("text-center block mt-8 text-gray-700 font-light").init(.{"https://github.com/yamada031016/ssg-zig"}),
+        a.setClass("text-center block mt-8 text-gray-700 font-light").init(.{"https://github.com/yamada031016/zframe"}),
         div.setClass("mt-40 bg-[#F0544F] px-28 py-20").init(.{ div.setClass("flex justify-center items-end").init(.{
-            h2.setClass("text-3xl font-extrabold").init(.{"What's in SSG-ZIG?"}),
+            h2.setClass("text-3xl font-extrabold").init(.{"What's in zframe?"}),
             p.setClass("text-lg pl-4").init(.{"A flexible, fast, robust framework written in Zig"}),
         }), div.setClass("pt-12").init(.{
             cardContainer(),

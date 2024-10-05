@@ -126,7 +126,7 @@ fn initProject(name: []const u8) !void {
             try project_dir.writeFile(.{ .sub_path = path, .data = contents, .flags = .{ .exclusive = true } });
         }
 
-        const cmd = try std.fmt.allocPrint(std.heap.page_allocator, "cd {s} ; zig fetch --save=ssg-zig https://github.com/yamada031016/ssg-zig/archive/refs/heads/main.tar.gz", .{name});
+        const cmd = try std.fmt.allocPrint(std.heap.page_allocator, "cd {s} ; zig fetch --save=zframe https://github.com/yamada031016/zframe/archive/refs/heads/main.tar.gz", .{name});
         _ = try execute_command(.{ "sh", "-c", cmd });
     } else |_| {
         log.err("{s} is already exists.", .{name});

@@ -1,4 +1,4 @@
-const z = @import("ssg-zig");
+const z = @import("zframe");
 const node = z.node;
 const c = @import("components");
 
