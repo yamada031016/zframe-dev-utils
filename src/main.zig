@@ -133,6 +133,11 @@ fn initProject(name: []const u8) !void {
     }
 }
 
+fn update_dependencies() !void {
+    const cmd = try std.fmt.allocPrint(std.heap.page_allocator, "zig fetch --save=zframe https://github.com/yamada031016/zframe/archive/refs/heads/main.tar.gz", .{});
+    _ = try execute_command(.{ "sh", "-c", cmd });
+}
+
 const stdout = std.io.getStdOut().writer();
 
 fn handleTty() !void {
@@ -214,6 +219,8 @@ pub fn main() !void {
                     try serve();
                 } else if (std.mem.eql(u8, option, "-h")) {}
             }
+        } else if (std.mem.eql(u8, arg, "update")) {
+            try update_dependencies();
         } else {
             std.log.err("Invalid command: {s}", .{arg});
             std.debug.print(usage_cmd(), .{});
