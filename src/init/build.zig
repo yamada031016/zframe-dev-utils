@@ -10,14 +10,14 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    const ssg_zig = b.dependency("zframe", .{
+    const zframe = b.dependency("zframe", .{
         .target = target,
         .optimize = .ReleaseFast,
     });
-    exe.root_module.addImport("zframe", ssg_zig.module("zframe"));
+    exe.root_module.addImport("zframe", zframe.module("zframe"));
 
     const components = b.createModule(.{ .root_source_file = b.path("src/components/components.zig") });
-    components.addImport("zframe", ssg_zig.module("zframe"));
+    components.addImport("zframe", zframe.module("zframe"));
     components.addImport("components", components);
     exe.root_module.addImport("components", components);
 
@@ -43,6 +43,7 @@ pub fn build(b: *std.Build) !void {
     // when generating html file, also generate unique hash value (from zig file metadata ?).
     // only in case of hash values are changed, delete old html files.
     cwd.makeDir("zig-out") catch {};
+    cwd.makeDir("zig-out/webcomponents") catch {};
     cwd.makeDir("zig-out/html") catch {
         var output_dir = try cwd.openDir("zig-out/html", .{ .iterate = true });
         defer output_dir.close();
@@ -67,7 +68,7 @@ pub fn build(b: *std.Build) !void {
     try html_dir.chmod(0o777);
     defer html_dir.close();
 
-    try generate_pages(b, run_step, target, allocator, .{ .{ "ssg-zig", ssg_zig.module("ssg-zig") }, .{ "components", components } });
+    try generate_pages(b, run_step, target, allocator, .{ .{ "zframe", zframe.module("zframe") }, .{ "components", components } });
 
     try wasm_autobuild(b, allocator, html_dir);
 
