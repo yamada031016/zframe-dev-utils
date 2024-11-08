@@ -23,7 +23,7 @@ fn usage_cmd() []const u8 {
     );
 }
 
-fn serve() !noreturn {
+fn serve() !void {
     const observe_dir = "src";
 
     const ip_addr = "0.0.0.0";
@@ -41,30 +41,32 @@ fn serve() !noreturn {
         .mask = std.posix.empty_sigset,
         .flags = 0,
     };
-    try std.posix.sigaction(std.posix.SIG.INT, &act, null);
+    std.posix.sigaction(std.posix.SIG.INT, &act, null);
 
     var browser = try Browser.init(.chrome, server.getPortNumber());
     try browser.openHtml();
     var Monitor = try FileMonitor.init(observe_dir);
     defer Monitor.deinit();
 
-    const fork_pid = try std.posix.fork();
-    if (fork_pid == 0) {
-        // child process
-        try server.serve();
-    } else {
-        // parent process
-        while (true) {
-            if (Monitor.detectChanges()) {
-                const status = try execute_command(.{ "zig", "build", "run" });
-                if (status == 0) {
-                    try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
-                }
-                try browser.reload();
-            }
-            std.time.sleep(5000000000);
+    const thread = try std.Thread.spawn(.{}, HTTPServer.serve, .{server});
+    _ = thread;
+    // const fork_pid = try std.posix.fork();
+    // if (fork_pid == 0) {
+    //     // child process
+    //     try server.serve();
+    // } else {
+    // parent process
+    // while (true) {
+    if (Monitor.detectChanges()) {
+        const status = try execute_command(.{ "zig", "build", "run" });
+        if (status == 0) {
+            try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
         }
+        try browser.reload();
     }
+    std.time.sleep(5000000000);
+    // }
+    // }
 }
 
 fn mdToHTML() !void {
@@ -105,7 +107,6 @@ fn initProject(name: []const u8) !void {
 
         const self_exe_path = try std.fs.selfExePathAlloc(std.heap.page_allocator);
         var cur_path: []const u8 = self_exe_path;
-        // std.debug.print("sub_exe_path: {s}\n", .{std.fs.path.dirname(self_exe_path).?});
         const template_dir = while (std.fs.path.dirname(cur_path)) |dirname| : (cur_path = dirname) {
             var base_dir = cwd.openDir(dirname, .{}) catch continue;
             defer base_dir.close();
@@ -137,6 +138,36 @@ fn initProject(name: []const u8) !void {
 fn update_dependencies() !void {
     const cmd = try std.fmt.allocPrint(std.heap.page_allocator, "zig fetch --save=zframe https://github.com/yamada031016/zframe/archive/refs/heads/master.tar.gz", .{});
     _ = try execute_command(.{ "sh", "-c", cmd });
+    const cwd = std.fs.cwd();
+    const self_exe_path = try std.fs.selfExePathAlloc(std.heap.page_allocator);
+    var cur_path: []const u8 = self_exe_path;
+
+    const template_dir = while (std.fs.path.dirname(cur_path)) |dirname| : (cur_path = dirname) {
+        var base_dir = cwd.openDir(dirname, .{}) catch continue;
+        defer base_dir.close();
+
+        const src_dir = existsSrc: {
+            const src_zig = "src";
+            const _src_dir = base_dir.openDir(src_zig, .{}) catch continue;
+            break :existsSrc std.Build.Cache.Directory{ .path = src_zig, .handle = _src_dir };
+        };
+        break try src_dir.handle.openDir("init", .{});
+    } else {
+        unreachable;
+    };
+
+    const max_bytes = 10 * 1024 * 1024;
+    const contents = try template_dir.readFileAlloc(std.heap.page_allocator, "build.zig", max_bytes);
+    atomic: {
+        try std.fs.Dir.copyFile(cwd, "build.zig", try cwd.openDir(".zig-cache", .{}), "old_build.zig", .{});
+        try cwd.deleteFile("build.zig");
+        cwd.writeFile(.{ .sub_path = "build.zig", .data = contents, .flags = .{ .exclusive = true, .truncate = true } }) catch |e| {
+            std.log.err("{s}\n", .{@errorName(e)});
+            try std.fs.Dir.copyFile(try cwd.openDir(".zig-cache", .{}), "old_build.zig", cwd, "build.zig", .{});
+            break :atomic;
+        };
+        break :atomic;
+    }
 }
 
 const stdout = std.io.getStdOut().writer();
@@ -172,14 +203,13 @@ fn handleTty() !void {
             try posix.tcsetattr(tty.handle, .FLUSH, original);
             try stdout.writeAll("\x1B[2J"); // clear screen
             try leaveAlt();
-            std.process.exit(0);
-        } else {
-            // try stdout.writeByte(byte);
+            std.posix.exit(0);
         }
     } else |e| {
         log.err("{s}", .{@errorName(e)});
     }
 }
+
 fn enterAlt() !void {
     try stdout.writeAll("\x1B[s"); // Save cursor position.
     try stdout.writeAll("\x1B[?47h"); // Save screen.
