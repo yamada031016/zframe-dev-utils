@@ -41,7 +41,7 @@ fn serve() !void {
         .mask = std.posix.empty_sigset,
         .flags = 0,
     };
-    std.posix.sigaction(std.posix.SIG.INT, &act, null);
+    try std.posix.sigaction(std.posix.SIG.INT, &act, null);
 
     var browser = try Browser.init(.chrome, server.getPortNumber());
     try browser.openHtml();
