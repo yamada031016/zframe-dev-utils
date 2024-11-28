@@ -69,9 +69,8 @@ pub fn build(b: *std.Build) !void {
     try html_dir.chmod(0o777);
     defer html_dir.close();
 
-    try generate_pages(b, run_step, target, allocator, .{ .{ "zframe", zframe.module("zframe") }, .{ "components", components } });
-
     try wasm_autobuild(b, allocator, html_dir);
+    try generate_pages(b, run_step, target, allocator, .{ .{ "zframe", zframe.module("zframe") }, .{ "components", components } });
 
     const js_dir = try html_dir.makeOpenPath("js", .{});
     try move_contents(allocator, "src/js", js_dir);

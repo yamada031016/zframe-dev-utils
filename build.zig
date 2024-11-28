@@ -11,13 +11,18 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const zerver_optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
+    const mod_opt = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
     const zerver = b.dependency("zerver", .{
         .target = target,
-        .optimize = zerver_optimize,
+        .optimize = mod_opt,
     });
-
     exe.root_module.addImport("zerver", zerver.module("zerver"));
+
+    // const websocket = b.dependency("websocket-zig", .{
+    //     .target = target,
+    //     .optimize = zerver_optimize,
+    // });
+    // exe.root_module.addImport("zerver", zerver.module("zerver"));
 
     const _md2html = b.dependency("md2html", .{
         .target = target,

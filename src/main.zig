@@ -3,6 +3,7 @@ const log = std.log;
 const Browser = @import("browser.zig").Browser;
 const FileMonitor = @import("file-monitor.zig").FileMonitor;
 const HTTPServer = @import("zerver").HTTPServer;
+const HTTPServer = @import("zerver").HTTPServer
 const md2html = @import("md2html");
 
 fn usage_cmd() []const u8 {
@@ -30,18 +31,21 @@ fn serve() !void {
     var server = try HTTPServer.init("zig-out/html", ip_addr, 3000);
     defer server.deinit();
 
-    var act = std.posix.Sigaction{
-        .handler = .{
-            .handler = struct {
-                fn wrapper(_: c_int) callconv(.C) void {
-                    std.process.exit(0);
-                }
-            }.wrapper,
-        },
-        .mask = std.posix.empty_sigset,
-        .flags = 0,
-    };
-    try std.posix.sigaction(std.posix.SIG.INT, &act, null);
+    var ws = try HTTPServer.init("zig-out/html", ip_addr, 3000);
+    defer ws.deinit();
+
+    // var act = std.posix.Sigaction{
+    //     .handler = .{
+    //         .handler = struct {
+    //             fn wrapper(_: c_int) callconv(.C) void {
+    //                 std.process.exit(0);
+    //             }
+    //         }.wrapper,
+    //     },
+    //     .mask = std.posix.empty_sigset,
+    //     .flags = 0,
+    // };
+    // try std.posix.sigaction(std.posix.SIG.INT, &act, null);
 
     var browser = try Browser.init(.chrome, server.getPortNumber());
     try browser.openHtml();
@@ -50,22 +54,23 @@ fn serve() !void {
 
     const thread = try std.Thread.spawn(.{}, HTTPServer.serve, .{server});
     _ = thread;
+    _ = try std.Thread.spawn(.{}, HTTPServer.serve, .{server});
     // const fork_pid = try std.posix.fork();
     // if (fork_pid == 0) {
     //     // child process
     //     try server.serve();
     // } else {
     // parent process
-    // while (true) {
-    if (Monitor.detectChanges()) {
-        const status = try execute_command(.{ "zig", "build", "run" });
-        if (status == 0) {
-            try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
+    while (true) {
+        if (Monitor.detectChanges()) {
+            const status = try execute_command(.{ "zig", "build", "run" });
+            if (status == 0) {
+                try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
+            }
+            try browser.reload();
         }
-        try browser.reload();
+        std.time.sleep(5000000000);
     }
-    std.time.sleep(5000000000);
-    // }
     // }
 }
 
@@ -98,7 +103,7 @@ fn initProject(name: []const u8) !void {
     if (cwd.makeDir(name)) {
         const project_dir = try cwd.openDir(name, .{});
         {
-            const dir_path = [_][]const u8{ "src", "src/pages", "src/components", "src/api", "static", ".plugins" };
+            const dir_path = [_][]const u8{ "src", "src/pages", "src/components", "src/api", "src/js", "public", ".plugins" };
             for (dir_path) |path| {
                 try project_dir.makeDir(path);
             }
@@ -240,7 +245,7 @@ pub fn main() !void {
                 std.log.err("zframe init <project_name>", .{});
             }
         } else if (std.mem.eql(u8, arg, "build")) {
-            const status = try execute_command(.{ "zig", "build", "run" });
+            const status = try execute_command(.{ "/bin/zig", "build", "run" });
             if (status == 0) {
                 try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
             }
