@@ -18,11 +18,11 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("zerver", zerver.module("zerver"));
 
-    // const websocket = b.dependency("websocket-zig", .{
-    //     .target = target,
-    //     .optimize = zerver_optimize,
-    // });
-    // exe.root_module.addImport("zerver", zerver.module("zerver"));
+    const websocket = b.dependency("websocket-zig", .{
+        .target = target,
+        .optimize = mod_opt,
+    });
+    exe.root_module.addImport("websocket-zig", websocket.module("websocket-zig"));
 
     const _md2html = b.dependency("md2html", .{
         .target = target,

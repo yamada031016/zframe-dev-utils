@@ -3,7 +3,8 @@ const log = std.log;
 const Browser = @import("browser.zig").Browser;
 const FileMonitor = @import("file-monitor.zig").FileMonitor;
 const HTTPServer = @import("zerver").HTTPServer;
-const HTTPServer = @import("zerver").HTTPServer
+const WebSocketManager = @import("zerver").WebSocketManager;
+const WebSocketServer = @import("zerver").WebSocketServer;
 const md2html = @import("md2html");
 
 fn usage_cmd() []const u8 {
@@ -31,8 +32,8 @@ fn serve() !void {
     var server = try HTTPServer.init("zig-out/html", ip_addr, 3000);
     defer server.deinit();
 
-    var ws = try HTTPServer.init("zig-out/html", ip_addr, 3000);
-    defer ws.deinit();
+    var manager = try WebSocketManager.init(5555);
+    var ws = try manager.waitConnection();
 
     // var act = std.posix.Sigaction{
     //     .handler = .{
@@ -67,9 +68,10 @@ fn serve() !void {
             if (status == 0) {
                 try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
             }
-            try browser.reload();
+            // try browser.reload();
+            try ws.sendReload();
         }
-        std.time.sleep(5000000000);
+        ws = try manager.waitConnection();
     }
     // }
 }
