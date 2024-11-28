@@ -5,7 +5,7 @@ const FileMonitor = @import("file-monitor.zig").FileMonitor;
 const HTTPServer = @import("zerver").HTTPServer;
 const WebSocketManager = @import("zerver").WebSocketManager;
 const WebSocketServer = @import("zerver").WebSocketServer;
-const md2html = @import("md2html");
+// const md2html = @import("md2html");
 
 fn usage_cmd() []const u8 {
     return (
@@ -25,6 +25,30 @@ fn usage_cmd() []const u8 {
     );
 }
 
+fn insertWebSocketConnectionCode(manager: WebSocketManager) !void {
+    const dir = try std.fs.cwd().openDir("zig-out/html", .{ .iterate = true });
+    var walker = try dir.walk(std.heap.page_allocator);
+    while (try walker.next()) |file| {
+        switch (file.kind) {
+            .file => {
+                if (std.mem.eql(u8, ".html", std.fs.path.extension(file.path))) {
+                    var output = try std.fs.cwd().openFile(
+                        try std.fmt.allocPrintZ(std.heap.page_allocator, "zig-out/html/{s}", .{file.path}),
+                        .{ .mode = .read_write },
+                    );
+                    try output.pwriteAll(try std.fmt.allocPrint(
+                        std.heap.page_allocator,
+                        // "<script type='text/javascript'>var con=new WebSocket(\"ws://localhost:{d}\");con.onopen=function(e){{console.log(e);con.onmessage=function(e){{console.log(e);window.location.reload()}}}}</script>",
+                        "<script> var con = new WebSocket('ws://localhost:{d}');con.onopen = function(event) {{console.log(event); con.onmessage = function(event) {{ window.location.reload(); }} }} </script> ",
+                        .{manager.listener.listen_address.getPort()},
+                    ), try output.getEndPos());
+                }
+            },
+            else => {},
+        }
+    }
+}
+
 fn serve() !void {
     const observe_dir = "src";
 
@@ -33,7 +57,7 @@ fn serve() !void {
     defer server.deinit();
 
     var manager = try WebSocketManager.init(5555);
-    var ws = try manager.waitConnection();
+    try insertWebSocketConnectionCode(manager);
 
     // var act = std.posix.Sigaction{
     //     .handler = .{
@@ -48,57 +72,73 @@ fn serve() !void {
     // };
     // try std.posix.sigaction(std.posix.SIG.INT, &act, null);
 
-    var browser = try Browser.init(.chrome, server.getPortNumber());
+    var browser = try Browser.init(.chrome, server.listener.listen_address.getPort());
     try browser.openHtml();
     var Monitor = try FileMonitor.init(observe_dir);
     defer Monitor.deinit();
 
     const thread = try std.Thread.spawn(.{}, HTTPServer.serve, .{server});
     _ = thread;
-    _ = try std.Thread.spawn(.{}, HTTPServer.serve, .{server});
+    _ = try std.Thread.spawn(.{}, WebSocketManager.waitConnection2, .{@constCast(&manager)});
+    // var ws = try manager.waitConnection();
+    // var ws:WebSocketServer = undefined;
     // const fork_pid = try std.posix.fork();
     // if (fork_pid == 0) {
     //     // child process
-    //     try server.serve();
+    //     while(true) {
+    //         ws = try manager.waitConnection();
+    //     }
     // } else {
-    // parent process
-    while (true) {
-        if (Monitor.detectChanges()) {
-            const status = try execute_command(.{ "zig", "build", "run" });
-            if (status == 0) {
-                try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
+        // parent process
+        while (true) {
+            if (Monitor.detectChanges()) {
+                    const status = try execute_command(.{ "zig", "build", "run" });
+                    if (status == 0) {
+                        try insertWebSocketConnectionCode(manager);
+                        try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
+                    // try ws.sendReload();
+                try manager.reload();
             }
-            // try browser.reload();
-            try ws.sendReload();
+                // ws = try manager.waitConnection();
+                // flag=false;
+            }
         }
-        ws = try manager.waitConnection();
-    }
     // }
 }
 
-fn mdToHTML() !void {
-    var md_dir = try std.fs.cwd().openDir("src/pages", .{ .iterate = true });
-    defer md_dir.close();
-    var md_output_dir = try std.fs.cwd().openDir("zig-out/html", .{ .iterate = true });
-    defer md_output_dir.close();
-    var walker = try md_dir.walk(std.heap.page_allocator);
-    while (try walker.next()) |file| {
-        switch (file.kind) {
-            .file => {
-                if (std.mem.eql(u8, ".md", std.fs.path.extension(file.path))) {
-                    var buf: [1024 * 10]u8 = undefined;
-                    const md = try file.dir.openFile(file.path, .{});
-                    const md_len = try md.readAll(&buf);
-                    const html = try md2html.convert(buf[0..md_len]);
-                    const output = try md_output_dir.createFile(try std.fmt.allocPrint(std.heap.page_allocator, "{s}.html", .{std.fs.path.stem(file.path)}), .{});
-                    try output.writeAll(html);
-                    defer output.close();
-                }
-            },
-            else => {},
-        }
-    }
-}
+// var flag = false;
+
+// fn webserver(server:HTTPServer) !void {
+//     while(true) {
+//         var thread = try std.Thread.spawn(.{}, HTTPServer.serve, .{server});
+//         thread.join();
+//         flag=true;
+//     }
+// }
+
+// fn mdToHTML() !void {
+//     var md_dir = try std.fs.cwd().openDir("src/pages", .{ .iterate = true });
+//     defer md_dir.close();
+//     var md_output_dir = try std.fs.cwd().openDir("zig-out/html", .{ .iterate = true });
+//     defer md_output_dir.close();
+//     var walker = try md_dir.walk(std.heap.page_allocator);
+//     while (try walker.next()) |file| {
+//         switch (file.kind) {
+//             .file => {
+//                 if (std.mem.eql(u8, ".md", std.fs.path.extension(file.path))) {
+//                     var buf: [1024 * 10]u8 = undefined;
+//                     const md = try file.dir.openFile(file.path, .{});
+//                     const md_len = try md.readAll(&buf);
+//                     const html = try md2html.convert(buf[0..md_len]);
+//                     const output = try md_output_dir.createFile(try std.fmt.allocPrint(std.heap.page_allocator, "{s}.html", .{std.fs.path.stem(file.path)}), .{});
+//                     try output.writeAll(html);
+//                     defer output.close();
+//                 }
+//             },
+//             else => {},
+//         }
+//     }
+// }
 
 fn initProject(name: []const u8) !void {
     const cwd = std.fs.cwd();
@@ -251,7 +291,7 @@ pub fn main() !void {
             if (status == 0) {
                 try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
             }
-            try mdToHTML();
+            // try mdToHTML();
             if (args.next()) |option| {
                 if (std.mem.eql(u8, option, "serve")) {
                     try serve();

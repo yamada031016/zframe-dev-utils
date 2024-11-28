@@ -3,9 +3,6 @@ const log = std.log;
 const IN = std.os.linux.IN;
 
 pub const FileMonitor = struct {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
-
     root_path: []const u8,
     fd: i32,
     monitors: std.StringHashMap(i32),
@@ -17,7 +14,7 @@ pub const FileMonitor = struct {
         var self = FileMonitor{
             .root_path = dir_path,
             .fd = fd,
-            .monitors = std.StringHashMap(i32).init(alloc),
+            .monitors = std.StringHashMap(i32).init(std.heap.page_allocator),
         };
         try self.addMonitor(dir_path);
         return self;
@@ -26,7 +23,6 @@ pub const FileMonitor = struct {
     pub fn deinit(self: *FileMonitor) void {
         // _ = std.os.linux.inotify_rm_watch(self.fd, self.watcher);
         _ = std.os.linux.close(self.fd);
-        _ = gpa.deinit();
     }
 
     fn addMonitor(self: *FileMonitor, path: []const u8) !void {
@@ -36,11 +32,11 @@ pub const FileMonitor = struct {
 
         var root = try std.fs.cwd().openDir(path, .{ .iterate = true });
         defer root.close();
-        var walker = try root.walk(alloc);
+        var walker = try root.walk(std.heap.page_allocator);
         while (try walker.next()) |entry| {
             switch (entry.kind) {
                 .directory => {
-                    const target_path = try std.fmt.allocPrintZ(alloc, "{s}/{s}", .{ path, entry.path });
+                    const target_path = try std.fmt.allocPrintZ(std.heap.page_allocator, "{s}/{s}", .{ path, entry.path });
                     if (!self.monitors.contains(target_path)) {
                         try self.addMonitor(target_path);
                     }
@@ -75,7 +71,7 @@ pub const FileMonitor = struct {
                 var event = @as(*std.os.linux.inotify_event, @ptrCast(@alignCast(buf[0..len])));
                 switch (event.mask) {
                     IN.CREATE | IN.ISDIR => {
-                        const path = std.fmt.allocPrintZ(alloc, "{s}/{s}", .{ self.root_path, event.getName().? }) catch {
+                        const path = std.fmt.allocPrintZ(std.heap.page_allocator, "{s}/{s}", .{ self.root_path, event.getName().? }) catch {
                             return false;
                         };
                         log.info("created {s},\tpath: {s}", .{ event.getName().?, path });
