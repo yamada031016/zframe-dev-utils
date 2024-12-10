@@ -59,19 +59,6 @@ fn serve() !void {
     var manager = try WebSocketManager.init(5555);
     try insertWebSocketConnectionCode(manager);
 
-    // var act = std.posix.Sigaction{
-    //     .handler = .{
-    //         .handler = struct {
-    //             fn wrapper(_: c_int) callconv(.C) void {
-    //                 std.process.exit(0);
-    //             }
-    //         }.wrapper,
-    //     },
-    //     .mask = std.posix.empty_sigset,
-    //     .flags = 0,
-    // };
-    // try std.posix.sigaction(std.posix.SIG.INT, &act, null);
-
     var browser = try Browser.init(.chrome, server.listener.listen_address.getPort());
     try browser.openHtml();
     var Monitor = try FileMonitor.init(observe_dir);
@@ -80,42 +67,17 @@ fn serve() !void {
     const thread = try std.Thread.spawn(.{}, HTTPServer.serve, .{server});
     _ = thread;
     _ = try std.Thread.spawn(.{}, WebSocketManager.waitConnection2, .{@constCast(&manager)});
-    // var ws = try manager.waitConnection();
-    // var ws:WebSocketServer = undefined;
-    // const fork_pid = try std.posix.fork();
-    // if (fork_pid == 0) {
-    //     // child process
-    //     while(true) {
-    //         ws = try manager.waitConnection();
-    //     }
-    // } else {
-        // parent process
-        while (true) {
-            if (Monitor.detectChanges()) {
-                    const status = try execute_command(.{ "zig", "build", "run" });
-                    if (status == 0) {
-                        try insertWebSocketConnectionCode(manager);
-                        try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
-                    // try ws.sendReload();
+    while (true) {
+        if (Monitor.detectChanges()) {
+            const status = try execute_command(.{ "zig", "build", "run" });
+            if (status == 0) {
+                try insertWebSocketConnectionCode(manager);
+                try stdout.print("\x1B[1;92mBUILD SUCCESS.\x1B[m\n", .{});
                 try manager.reload();
             }
-                // ws = try manager.waitConnection();
-                // flag=false;
-            }
         }
-    // }
+    }
 }
-
-// var flag = false;
-
-// fn webserver(server:HTTPServer) !void {
-//     while(true) {
-//         var thread = try std.Thread.spawn(.{}, HTTPServer.serve, .{server});
-//         thread.join();
-//         flag=true;
-//     }
-// }
-
 // fn mdToHTML() !void {
 //     var md_dir = try std.fs.cwd().openDir("src/pages", .{ .iterate = true });
 //     defer md_dir.close();
@@ -319,9 +281,6 @@ fn execute_command(command: anytype) !u32 {
         // parent process
         const wait_result = std.posix.waitpid(fork_pid, 0);
         return wait_result.status;
-        // if (wait_result.status != 0) {
-        //     std.log.err("exit code: {}", .{wait_result.status});
-        // }
     }
     unreachable;
 }
